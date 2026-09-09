@@ -8,8 +8,10 @@ No build step, no dependencies, no accounts. It is one HTML file.
 ## Features
 
 - Live speech-to-text using the browser's built-in Web Speech API
-- Ten languages: English (India / US / UK), Hindi, Marathi, Gujarati, Tamil,
-  Telugu, Bengali and Punjabi
+- 32 languages, grouped in the dropdown: four English variants, eleven from
+  the subcontinent (Hindi, Marathi, Gujarati, Punjabi, Bengali, Tamil, Telugu,
+  Kannada, Malayalam, Urdu, Nepali) and seventeen others including Arabic,
+  Mandarin, French, German, Japanese, Korean, Russian, Spanish and Turkish
 - Automatic capital letters and full stops between sentences
 - The text stays editable, so you can fix mistakes before printing
 - **Print** produces a clean page: title, date and your words only, with none of
