@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Speak &amp; Print</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --card:#fff; --ink:#16181d; --muted:#6b7280;
+    --line:#e2e5ea; --accent:#2f6bff; --rec:#e5484d;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:16px/1.5 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:860px;margin:0 auto;padding:24px 18px 60px}
+  header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+  h1{font-size:20px;margin:0;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:13px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px}
+  .bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+  button,select,input[type=text]{font:inherit;border-radius:10px;border:1px solid var(--line);
+       background:#fff;color:var(--ink);padding:10px 14px;cursor:pointer}
+  input[type=text]{cursor:text}
+  button:hover{border-color:#c8cdd6}
+  .primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .primary:hover{background:#2559db;border-color:#2559db}
+  .primary.rec{background:var(--rec);border-color:var(--rec)}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#fff;margin-right:8px;
+       vertical-align:1px}
+  .rec .dot{animation:blink 1s infinite}
+  @keyframes blink{50%{opacity:.15}}
+  #title{width:100%;margin-bottom:12px;font-size:18px;font-weight:600}
+  #text{width:100%;min-height:340px;padding:16px;border:1px solid var(--line);border-radius:10px;
+       font:17px/1.7 Georgia,"Times New Roman",serif;resize:vertical;outline:none;background:#fff}
+  #text:focus{border-color:var(--accent)}
+  .interim{color:var(--muted);font-style:italic;min-height:24px;margin-top:10px;font-size:15px}
+  .status{color:var(--muted);font-size:13px;margin-top:10px}
+  .err{color:var(--rec)}
+  .spacer{flex:1}
+  #printArea{display:none}
+  @media print{
+    body{background:#fff}
+    .noprint{display:none !important}
+    .wrap{max-width:none;padding:0}
+    #printArea{display:block}
+    #printBody{white-space:pre-wrap;font:12pt/1.6 Georgia,"Times New Roman",serif}
+    #printTitle{font:bold 16pt Georgia,serif;margin:0 0 4pt}
+    #printDate{font:10pt Georgia,serif;color:#555;margin:0 0 18pt}
+    @page{margin:20mm}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="noprint">
+    <h1>Speak &amp; Print</h1>
+    <span class="sub">Talk &rarr; text &rarr; paper</span>
+  </header>
+
+  <div class="card noprint">
+    <div class="bar">
+      <button id="mic" class="primary"><span class="dot"></span><span id="micLabel">Start speaking</span></button>
+      <select id="lang" title="Speech language">
+        <option value="en-IN">English (India)</option>
+        <option value="en-US">English (US)</option>
+        <option value="en-GB">English (UK)</option>
+        <option value="hi-IN">Hindi</option>
+        <option value="mr-IN">Marathi</option>
+        <option value="gu-IN">Gujarati</option>
+        <option value="ta-IN">Tamil</option>
+        <option value="te-IN">Telugu</option>
+        <option value="bn-IN">Bengali</option>
+        <option value="pa-Guru-IN">Punjabi</option>
+      </select>
+      <div class="spacer"></div>
+      <button id="copy">Copy</button>
+      <button id="save">Save .txt</button>
+      <button id="clear">Clear</button>
+      <button id="print" class="primary">Print</button>
+    </div>
+
+    <input type="text" id="title" placeholder="Title (optional) - printed at the top">
+    <textarea id="text" placeholder="Your speech appears here. You can edit it before printing."></textarea>
+    <div class="interim" id="interim"></div>
+    <div class="status" id="status">Ready. Click "Start speaking" and allow the microphone.</div>
+  </div>
+
+  <!-- Only this block goes on the paper -->
+  <div id="printArea">
+    <h1 id="printTitle"></h1>
+    <p id="printDate"></p>
+    <div id="printBody"></div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  var micBtn    = document.getElementById('mic');
+  var micLabel  = document.getElementById('micLabel');
+  var langSel   = document.getElementById('lang');
+  var textEl    = document.getElementById('text');
+  var titleEl   = document.getElementById('title');
+  var interimEl = document.getElementById('interim');
+  var statusEl  = document.getElementById('status');
+
+  function say(msg, isErr) {
+    statusEl.textContent = msg;
+    statusEl.className = 'status' + (isErr ? ' err' : '');
+  }
+
+  /* ---- remember the last session ---- */
+  try {
+    textEl.value  = localStorage.getItem('sp_text')  || '';
+    titleEl.value = localStorage.getItem('sp_title') || '';
+    langSel.value = localStorage.getItem('sp_lang')  || 'en-IN';
+  } catch (e) {}
+
+  function persist() {
+    try {
+      localStorage.setItem('sp_text', textEl.value);
+      localStorage.setItem('sp_title', titleEl.value);
+      localStorage.setItem('sp_lang', langSel.value);
+    } catch (e) {}
+  }
+  textEl.addEventListener('input', persist);
+  titleEl.addEventListener('input', persist);
+  langSel.addEventListener('change', function () {
+    persist();
+    if (wantListening) { stop(); setTimeout(start, 300); }
+  });
+
+  /* ---- speech recognition ---- */
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var rec = null, listening = false, wantListening = false;
+
+  if (!SR) {
+    micBtn.disabled = true;
+    say('Speech recognition is not supported in this browser. Open this file in Google Chrome or Microsoft Edge.', true);
+  }
+
+  function build() {
+    var r = new SR();
+    r.lang = langSel.value;
+    r.continuous = true;
+    r.interimResults = true;
+
+    r.onstart = function () {
+      listening = true;
+      micBtn.classList.add('rec');
+      micLabel.textContent = 'Stop';
+      say('Listening... speak normally. Pause between sentences.');
+    };
+
+    r.onresult = function (ev) {
+      var interim = '';
+      for (var i = ev.resultIndex; i < ev.results.length; i++) {
+        var chunk = ev.results[i][0].transcript;
+        if (ev.results[i].isFinal) {
+          var t = chunk.trim();
+          if (t) {
+            t = t.charAt(0).toUpperCase() + t.slice(1);
+            if (!/[.!?]$/.test(t)) { t += '.'; }
+            var cur = textEl.value;
+            if (cur && !/\s$/.test(cur)) { cur += ' '; }
+            textEl.value = cur + t + ' ';
+            persist();
+            textEl.scrollTop = textEl.scrollHeight;
+          }
+        } else {
+          interim += chunk;
+        }
+      }
+      interimEl.textContent = interim;
+    };
+
+    r.onerror = function (ev) {
+      if (ev.error === 'no-speech' || ev.error === 'aborted') { return; }
+      if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
+        wantListening = false;
+        say('Microphone blocked. Click the padlock or microphone icon in the address bar, allow the microphone, then try again.', true);
+      } else if (ev.error === 'network') {
+        say('Network error - speech recognition needs an internet connection.', true);
+      } else {
+        say('Error: ' + ev.error, true);
+      }
+    };
+
+    r.onend = function () {
+      listening = false;
+      interimEl.textContent = '';
+      if (wantListening) {
+        try { r.start(); } catch (e) {}       /* auto-resume after browser timeout */
+      } else {
+        micBtn.classList.remove('rec');
+        micLabel.textContent = 'Start speaking';
+        if (statusEl.className.indexOf('err') === -1) {
+          say('Stopped. Edit the text if you like, then press Print.');
+        }
+      }
+    };
+    return r;
+  }
+
+  function start() {
+    if (!SR) { return; }
+    rec = build();
+    wantListening = true;
+    try { rec.start(); } catch (e) {}
+  }
+
+  function stop() {
+    wantListening = false;
+    if (rec) { try { rec.stop(); } catch (e) {} }
+    micBtn.classList.remove('rec');
+    micLabel.textContent = 'Start speaking';
+  }
+
+  micBtn.addEventListener('click', function () {
+    if (wantListening || listening) { stop(); } else { start(); }
+  });
+
+  /* ---- print ---- */
+  function fillPrint() {
+    document.getElementById('printTitle').textContent = titleEl.value.trim();
+    document.getElementById('printDate').textContent  = new Date().toLocaleString();
+    document.getElementById('printBody').textContent  = textEl.value.trim();
+  }
+
+  document.getElementById('print').addEventListener('click', function () {
+    if (!textEl.value.trim()) {
+      say('Nothing to print yet - speak or type something first.', true);
+      return;
+    }
+    if (wantListening || listening) { stop(); }
+    fillPrint();
+    window.print();
+  });
+
+  window.addEventListener('beforeprint', fillPrint);   /* Ctrl+P prints the clean page too */
+
+  /* ---- copy / save / clear ---- */
+  document.getElementById('copy').addEventListener('click', function () {
+    textEl.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) {}
+    if (!ok && navigator.clipboard) {
+      navigator.clipboard.writeText(textEl.value).then(function () { say('Copied to clipboard.'); },
+                                                       function () { say('Press Ctrl+C to copy.', true); });
+      return;
+    }
+    say(ok ? 'Copied to clipboard.' : 'Press Ctrl+C to copy.');
+  });
+
+  document.getElementById('save').addEventListener('click', function () {
+    var name = (titleEl.value.trim() || 'speech').replace(/[\\\/:*?"<>|]/g, '-');
+    var head = titleEl.value.trim() ? titleEl.value.trim() + '\n\n' : '';
+    var blob = new Blob([head + textEl.value], {type: 'text/plain;charset=utf-8'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name + '.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    say('Saved as ' + name + '.txt');
+  });
+
+  document.getElementById('clear').addEventListener('click', function () {
+    if (textEl.value && !confirm('Clear all the text?')) { return; }
+    textEl.value = '';
+    interimEl.textContent = '';
+    persist();
+    say('Cleared.');
+  });
+})();
+</script>
+</body>
+</html>
